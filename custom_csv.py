@@ -1,12 +1,15 @@
-# custom_csv.py
-from typing import List, TextIO, Iterable
+from typing import List, Iterable, TextIO
+
 
 # ----------------- CSV Reader -----------------
 class CustomCsvReader:
-    """A streaming CSV reader that yields rows as lists of strings."""
+    """
+    Streaming CSV reader implemented from scratch.
+    Reads character-by-character without using Python's csv module.
+    """
 
     def __init__(self, file: TextIO):
-        self.f = file
+        self.file = file
         self.eof = False
 
     def __iter__(self):
@@ -17,103 +20,77 @@ class CustomCsvReader:
             raise StopIteration
 
         row = []
-        field_chars = []
+        field = []
         in_quotes = False
 
         while True:
-            ch = self.f.read(1)
-            if ch == '':
-                # EOF
+            ch = self.file.read(1)
+
+            if ch == "":
                 self.eof = True
                 if in_quotes:
                     raise ValueError("Unexpected EOF inside quoted field")
-                if field_chars or row:
-                    row.append(''.join(field_chars))
+                if field or row:
+                    row.append("".join(field))
                     return row
                 raise StopIteration
 
             if ch == '"':
-                if not in_quotes:
-                    if field_chars:
-                        field_chars.append('"')
-                    else:
-                        in_quotes = True
-                else:
-                    next_ch = self.f.read(1)
+                if in_quotes:
+                    next_ch = self.file.read(1)
                     if next_ch == '"':
-                        field_chars.append('"')
+                        field.append('"')
                     else:
                         in_quotes = False
-                        if next_ch != '':
-                            try:
-                                self.f.seek(self.f.tell() - 1)
-                            except Exception:
-                                if next_ch not in [',', '\n', '\r']:
-                                    field_chars.append(next_ch)
+                        if next_ch:
+                            self.file.seek(self.file.tell() - 1)
+                else:
+                    in_quotes = True
                 continue
 
             if in_quotes:
-                field_chars.append(ch)
+                field.append(ch)
                 continue
 
-            if ch == ',':
-                row.append(''.join(field_chars))
-                field_chars = []
+            if ch == ",":
+                row.append("".join(field))
+                field = []
                 continue
-            if ch == '\n':
-                row.append(''.join(field_chars))
-                return row
-            if ch == '\r':
-                next_ch = self.f.read(1)
-                if next_ch != '\n':
-                    try:
-                        self.f.seek(self.f.tell() - 1)
-                    except Exception:
-                        pass
-                row.append(''.join(field_chars))
+
+            if ch == "\n":
+                row.append("".join(field))
                 return row
 
-            field_chars.append(ch)
+            if ch == "\r":
+                next_ch = self.file.read(1)
+                if next_ch != "\n":
+                    self.file.seek(self.file.tell() - 1)
+                row.append("".join(field))
+                return row
 
-    def __enter__(self):
-        return self
+            field.append(ch)
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            self.f.close()
-        except Exception:
-            pass
 
 # ----------------- CSV Writer -----------------
 class CustomCsvWriter:
-    """Write rows (lists of strings) to a file in CSV format."""
+    """Custom CSV writer implemented from scratch."""
 
     def __init__(self, file: TextIO):
-        self.f = file
+        self.file = file
 
-    def _needs_quote(self, s: str) -> bool:
-        return ',' in s or '"' in s or '\n' in s or '\r' in s
+    def _needs_quotes(self, value: str) -> bool:
+        return any(c in value for c in [",", '"', "\n", "\r"])
 
-    def _quote_field(self, s: str) -> str:
-        if '"' in s:
-            s = s.replace('"', '""')
-        if self._needs_quote(s):
-            return f'"{s}"'
-        return s
+    def _format_field(self, value: str) -> str:
+        value = value.replace('"', '""')
+        if self._needs_quotes(value):
+            return f'"{value}"'
+        return value
 
     def writerow(self, row: List[str]):
-        processed = [self._quote_field('' if cell is None else str(cell)) for cell in row]
-        self.f.write(','.join(processed) + '\n')
+        formatted = [self._format_field("" if v is None else str(v)) for v in row]
+        self.file.write(",".join(formatted) + "\n")
 
     def writerows(self, rows: Iterable[List[str]]):
-        for r in rows:
-            self.writerow(r)
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            self.f.close()
-        except Exception:
-            pass
+        for row in rows:
+            self.writerow(row)
